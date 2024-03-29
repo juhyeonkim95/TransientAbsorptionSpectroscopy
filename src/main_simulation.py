@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import scipy
 import pandas as pd
 import itertools
+import sys
+
 
 def exponential_with_three_params(t, A, tau, B):
     return A * np.exp(-t / tau) + B
@@ -17,9 +19,6 @@ def exponential_with_one_params(t, tau):
 def exponential_with_one_params_derivative(t, tau):
     tau_prime = tau * (1.0 + 0.0 * (2.0 * np.random.random() - 1.0))
     return np.exp(-t / tau_prime) * t
-
-# def exponential_with_one_params_derivative2(t, tau):
-#     return np.exp(-t / tau) * t
 
 def t_proportional(t):
     return t
@@ -52,12 +51,6 @@ def get_time_samples(**kwargs):
     elif time_sampling_method == "certain_range_only":
         ts = np.linspace(kwargs.get("range_start"), kwargs.get("range_end"), N)
 
-    # ts_new = np.zeros(N+2,)
-    # ts_new[0] = st
-    # ts_new[1:N+1] = ts
-    # ts_new[N+1] = et
-    # ts = ts_new
-    
     return ts
 
 def get_sample_numbers(total_M, ts, **kwargs):
@@ -76,16 +69,11 @@ def get_sample_numbers(total_M, ts, **kwargs):
     Ms = total_M * p
     return Ms
 
-
 def run_curve_fit(**kwargs):
     n_iter = kwargs.get("n_iter", 1000)
     N = kwargs.get("N", 100)
     parametric_model = kwargs.get("parametric_model")
     params = kwargs.get("params")
-    A = params["A"]
-    B = params["B"]
-    tau = params["tau"]
-    
 
     fitted_params = []
     fitted_params_var = []
@@ -120,10 +108,23 @@ def run_curve_fit(**kwargs):
 
     # repetition
     for i in trange(n_iter):
+        A = lerp(1.0, 2.0, np.random.random())
+        B = lerp(0.0, 3.0, np.random.random())
+        tau = lerp(1.0, 3.0, np.random.random())
+        
+        kwargs_new = {**kwargs}
+        if "time_sampling_f" in kwargs:
+            time_sampling_f = lambda t: kwargs.get("time_sampling_f")(t, tau)
+            kwargs_new["time_sampling_f"] = time_sampling_f
+        
+        if kwargs.get("time_sampling_method") == "certain_range_only":
+            kwargs_new["range_start"] = kwargs.get("range_start") * tau
+            kwargs_new["range_end"] = kwargs.get("range_end") * tau
 
         # (1) set when to sample & how much to sample
-        ts = get_time_samples(**kwargs)
-        all_ts.append(np.sort(ts))
+        ts = get_time_samples(**kwargs_new)
+
+        all_ts.append(np.sort(ts) / tau)
         
         # number of samples
         M = kwargs.get("M") 
@@ -206,7 +207,7 @@ def run_curve_fit(**kwargs):
                 tau_expected = -1.0 / poly_A
                 perr = 0.0
 
-            fitted_params.append(tau_expected)
+            fitted_params.append(((tau - tau_expected)/tau) ** 2)
             fitted_params_var.append(perr)
         except:
             failed_count += 1
@@ -216,12 +217,8 @@ def run_curve_fit(**kwargs):
     print(failed_count)
 
     fitted_params = np.asarray(fitted_params)
-    error = np.mean((fitted_params - tau) ** 2, axis=0)
-
-    # fitted_params_var = np.asarray(fitted_params_var)
-    # error = np.mean(fitted_params_var)
-    #if error > 1:
-    #    error = 0.0
+    error = np.mean(fitted_params)
+    error = np.sqrt(error)
     
     result = {}
     result["error"] = error
@@ -232,7 +229,7 @@ def run_curve_fit(**kwargs):
 
 def run_comparison_all(common_configs):
     total_errors = {}
-    tau = common_configs["params"]["tau"]
+    # tau = common_configs["params"]["tau"]
 
     expconfig_list = {
         "uniform": {
@@ -240,29 +237,32 @@ def run_comparison_all(common_configs):
         },
         "exponential": {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: np.exp(t / -tau)
+            "time_sampling_f": lambda t, tau: np.exp(t / -tau)
         },
         "exponential_derivative": {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: t * np.exp(t / -tau)
+            "time_sampling_f": lambda t, tau: t * np.exp(t / -tau)
         },
         "exponential_derivative_power": {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: np.power(t * np.exp(t / -tau), 10)
+            "time_sampling_f": lambda t, tau: np.power(t * np.exp(t / -tau), 10)
         },
-        # "certain_range_only": {
-        #     "time_sampling_method": "certain_range_only",
-        #     "range_start": tau * 0.99,
-        #     "range_end": tau * 1.01
-        # }
+        "certain_range_only": {
+            "time_sampling_method": "certain_range_only",
+            "range_start": 0.99,
+            "range_end": 1.01
+        }
     }
-    
+    fig = plt.figure(figsize=(6,6))
     for expname, expconfig in expconfig_list.items():
         errors = {}
 
         # (1) Three model : Evaluate all of A, tau, B (without background subtraction & normalization)
         result = run_curve_fit(**common_configs, **expconfig, curve_fit_method="three")
         errors["no_normalize"] = result["error"]
+
+        ts = result["ts"]
+        plt.plot(ts, linewidth=2, label=expname)
 
         # (2) Two model : Evaluate A, tau (without normalization)
         for v in [0.1, 0.3, 0.5, 0.7, 0.9]:
@@ -276,34 +276,28 @@ def run_comparison_all(common_configs):
                 initial_sample_ratio=0.5*v, background_sample_ratio=0.5*v, 
                 curve_fit_method="one")
             errors["normalize_%.2f"%v] = result["error"]
-
-        # # (3) One model : Evaluate tau
-        # dedicate how many samples for normalization?
-        # for v in [0.1, 0.3, 0.5, 0.7, 0.9]:
-        #     result = run_curve_fit(**common_configs, **expconfig, initial_sample_ratio=0.5*v, background_sample_ratio=0.5*v, curve_fit_method="log_and_linear")
-        #     errors["log_linear_normalized_%.2f"%v] = result["error"]
-
-        # for v in [0.1, 0.3, 0.5, 0.7, 0.9]:
-        #     error = run_curve_fit(**common_configs, **expconfig, background_sample_ratio=v, curve_fit_method="log_and_linear")
-        #     errors["log_linear_%.2f"%v] = result["error"]
-
         total_errors[expname] = errors
-    # plt.show()
+    
+    # save time
+    plt.legend()
+    plt.savefig("../result/sampled_times.svg", dpi=600)
+    plt.savefig("../result/sampled_times.png", dpi=600)
+    plt.clf()
+
     df = pd.DataFrame.from_dict(total_errors)
     min_error = np.min(np.asarray(df))
 
     df.plot.bar(figsize=(15,6), legend=None)
     plt.axhline(y = min_error, color = 'black', linestyle = '-')
     
-    plt.ylim(ymin=0.0, ymax=0.04)
-    # plt.show()
+    plt.ylim(ymin=0.05, ymax=0.3)
+    plt.legend()
+    plt.savefig("../result/simulation_full.svg", dpi=600)
+    plt.savefig("../result/simulation_full.png", dpi=600)
 
-    plt.savefig("../result_plot/simulation_full.svg", dpi=600)
-    plt.savefig("../result_plot/simulation_full.png", dpi=600)
-
-def run_comparison_linear(common_configs):
+def run_with_linear(common_configs):
     total_errors = {}
-    tau = common_configs["params"]["tau"]
+    # tau = common_configs["params"]["tau"]
 
     expconfig_list = {
         "uniform": {
@@ -311,27 +305,27 @@ def run_comparison_linear(common_configs):
         },
         "exponential": {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: np.exp(t / -tau)
+            "time_sampling_f": lambda t, tau: np.exp(t / -tau)
         },
         "exponential_derivative": {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: t * np.exp(t / -tau)
+            "time_sampling_f": lambda t, tau: t * np.exp(t / -tau)
         },
         "exponential_derivative_power": {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: np.power(t * np.exp(t / -tau), 10)
+            "time_sampling_f": lambda t, tau: np.power(t * np.exp(t / -tau), 10)
         },
-        # "certain_range_only": {
-        #     "time_sampling_method": "certain_range_only",
-        #     "range_start": tau * 0.99,
-        #     "range_end": tau * 1.01
-        # }
+        "certain_range_only": {
+            "time_sampling_method": "certain_range_only",
+            "range_start": 0.99,
+            "range_end": 1.01
+        }
     }
     
     for expname, expconfig in expconfig_list.items():
         errors = {}
         v = 0.3
-        for noise in [0.3, 0.1, 0.01]:
+        for noise in [0.3, 0.03, 0.003]:
             common_configs_temp = {**common_configs}
             common_configs_temp["noise_stdev"] = noise
             result = run_curve_fit(**common_configs_temp, **expconfig, 
@@ -352,142 +346,22 @@ def run_comparison_linear(common_configs):
     patterns = [ "/" , "\\" , "|" , "-" , "+" , "x", "o", "O", ".", "*" ]
     df.plot.bar(figsize=(8,6), legend=None, hatch=['', "//", "", "//", "", "//"])
     plt.axhline(y = 0.0, color = 'black', linestyle = '-')
-    plt.ylim(ymin=-5, ymax=1)
-    # lt.show()
+    plt.ylim(ymin=-3, ymax=0.5)
 
-    plt.savefig("../result_plot/simulation_linear.svg", dpi=600)
-    plt.savefig("../result_plot/simulation_linear.png", dpi=600)
-
-
-def run_every_configurations(common_configs):
-    total_errors = {}
-    tau = common_configs["params"]["tau"]
-
-    time_sampling_configs = {
-        # "uniform": {
-        #     "time_sampling_method": "uniform",
-        # },
-        # "exponential": {
-        #     "time_sampling_method": "proportional_sample",
-        #     "time_sampling_f": lambda t: np.exp(t / -tau)
-        # },
-        "exponential_derivative_power": {
-            "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: np.power(t * np.exp(t / -tau), 10)
-        },
-    }
-
-    sample_number_methods = {
-        "uniform": {
-            "sampling_number_method": "uniform",
-        },
-        # "exponential": {
-        #     "time_sampling_method": "proportional_sample",
-        #     "time_sampling_f": lambda t: np.exp(t / -tau)
-        # },
-        # "exponential_inverse": {
-        #     "time_sampling_method": "proportional_sample",
-        #     "time_sampling_f": lambda t: np.exp(t / tau)
-        # },
-    }
-
-    TOTAL_BUDGET = 100
-    Ns = [100, 50, 10]
-    # Ns = np.arange(100) + 1
-
-    for N in Ns:
-        for time_sampling_method, time_sampling_config in time_sampling_configs.items():
-            for sample_number_method, sample_number_config in sample_number_methods.items():
-                common_configs_temp = {**common_configs, **time_sampling_config, **sample_number_config}
-                common_configs_temp["N"] = N
-                common_configs_temp["M"] = TOTAL_BUDGET / N
-                common_configs_temp["n_iter"] = 10000
-                
-                errors = {}
-                v = 0.3
-
-                # result = run_curve_fit(**common_configs_temp, 
-                #     initial_sample_ratio=v, background_sample_ratio=v, 
-                #     curve_fit_method="one")
-                # total_errors[(N, time_sampling_method, sample_number_method, "non_linear")] = result["error"]
-
-                result = run_curve_fit(**common_configs_temp, 
-                    initial_sample_ratio=v, background_sample_ratio=v, 
-                    curve_fit_method="log_and_linear")
-                total_errors[(N, time_sampling_method, sample_number_method, "log_and_linear")] = result["error"]
-    
-    result_dict_list = []
-    for key, value in total_errors.items():
-        N, time_sampling_method, sample_number_method, fitting_method = key
-        result_dict_list.append({
-            "N": N,
-            "time_sampling_method": time_sampling_method,
-            "sample_number_method": sample_number_method,
-            "fitting_method": fitting_method,
-            "error": value
-        })
-
-    df = pd.DataFrame.from_dict(result_dict_list)
-    d = df.pivot(index='time_sampling_method', columns=["N", "sample_number_method", "fitting_method"], values='error')
-    df["error"].plot()
-    plt.show()
-
-    # df.columns = ["N", "time sampling", "sample number", "fitting"]
-    print(df)
-
-def run_comparison_linear_with_duplicate(common_configs):
-    total_errors = {}
-    tau = common_configs["params"]["tau"]
-
-    expconfig_list = {
-        "uniform": {
-            "time_sampling_method": "uniform",
-            "sampling_number_method": "uniform"
-        },
-        "linear": {
-            "time_sampling_method": "uniform",
-            "sampling_number_method": "proportional",
-            "sample_number_f": lambda t: (t + 1)
-        }
-    }
-
-    for expname, expconfig in expconfig_list.items():
-        errors = {}
-        v = 0.3
-        # result = run_curve_fit(**common_configs, **expconfig, 
-        #     initial_sample_ratio=v, background_sample_ratio=v, 
-        #     curve_fit_method="one")
-        # errors["non_linear_%.2f"%v] = result["error"]
-
-        # (3) One model : Evaluate tau
-        result = run_curve_fit(**common_configs, **expconfig, 
-            initial_sample_ratio=v, background_sample_ratio=v, 
-            curve_fit_method="log_and_linear")
-        errors["linear_%.2f"%v] = result["error"]
-
-        total_errors[expname] = errors
-
-    # plt.show()
-    df = pd.DataFrame.from_dict(total_errors)
-    df.plot.bar(figsize=(12,6), legend=None)
-    # plt.ylim(ymin=0.0, ymax=1.0)
-    plt.show()
-
+    plt.savefig("../result/simulation_linear.svg", dpi=600)
+    plt.savefig("../result/simulation_linear.png", dpi=600)
 
 def run_with_different_tau(common_configs):
-    tau = common_configs["params"]["tau"]
-    
     initial_taus = np.linspace(0.2, 2.0, 100)
     dtau = initial_taus[1] - initial_taus[0]
 
-    
     # (1) exponential
     errors_exponential = []
     for i in range(len(initial_taus) - 1):
-        k = tau*initial_taus[i]
+        k = initial_taus[i]
         config = {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": (lambda t: np.exp(-t / k))
+            "time_sampling_f": (lambda t, tau: np.exp(-t / (k * tau)))
         }
 
         result = run_curve_fit(**common_configs, **config, 
@@ -498,10 +372,10 @@ def run_with_different_tau(common_configs):
     # (1) exponential derivative
     errors_derivative = []
     for i in range(len(initial_taus) - 1):
-        k = tau*initial_taus[i]
+        k = initial_taus[i]
         config = {
             "time_sampling_method": "proportional_sample",
-            "time_sampling_f": (lambda t: np.power(t * np.exp(-t / k), 1.0))
+            "time_sampling_f": (lambda t, tau: t * np.exp(-t / (k * tau)))
         }
 
         result = run_curve_fit(**common_configs, **config, 
@@ -509,13 +383,28 @@ def run_with_different_tau(common_configs):
             curve_fit_method="one")
         errors_derivative.append(result["error"])
 
+    # (1) exponential derivative power
+    errors_derivative_power = []
+    for i in range(len(initial_taus) - 1):
+        k = initial_taus[i]
+        config = {
+            "time_sampling_method": "proportional_sample",
+            "time_sampling_f": (lambda t, tau: np.power(t * np.exp(-t / (k * tau)), 10))
+        }
+
+        result = run_curve_fit(**common_configs, **config, 
+            initial_sample_ratio=0.3, background_sample_ratio=0.3, 
+            curve_fit_method="one")
+        errors_derivative_power.append(result["error"])
+
+
     # (2) range only
     errors_range_only = []
     for i in range(len(initial_taus) - 1):
         config = {
             "time_sampling_method": "certain_range_only",
-            "range_start": initial_taus[i] * tau,
-            "range_end": initial_taus[i+1] * tau
+            "range_start": initial_taus[i],
+            "range_end": initial_taus[i+1]
         }
         result = run_curve_fit(**common_configs, **config, 
             initial_sample_ratio=0.3, background_sample_ratio=0.3, 
@@ -526,10 +415,6 @@ def run_with_different_tau(common_configs):
     expconfig_list = {
         "uniform": {
             "time_sampling_method": "uniform"
-        },
-        "exponential": {
-            "time_sampling_method": "proportional_sample",
-            "time_sampling_f": lambda t: np.exp(t / -tau)
         }
     }
     for expname, expconfig in expconfig_list.items():
@@ -542,25 +427,14 @@ def run_with_different_tau(common_configs):
     plt.axhline(y = errors_others["uniform"], color = 'C0', linestyle = '-')
     plt.plot(initial_taus[0:-1], errors_exponential, color = 'C1', label = "exponential")
     plt.plot(initial_taus[0:-1], errors_derivative, color = 'C2', label = "derivative")
-    plt.plot(initial_taus[0:-1], errors_range_only, color = 'C3', label = "only")
+    plt.plot(initial_taus[0:-1], errors_derivative_power, color = 'C3', label = "derivative power")
+    plt.plot(initial_taus[0:-1], errors_range_only, color = 'C4', label = "only certain range")
+    plt.legend()
 
-    # plt.legend()
-    # plt.axhline(y = errors_others["exponential"], color = 'b', linestyle = '-')
-    # plt.show()
+    plt.savefig("../result/simulation_changing_initial_tau_guess.svg", dpi=600)
+    plt.savefig("../result/simulation_changing_initial_tau_guess.png", dpi=600)
 
-    # plt.show()
-    # df = pd.DataFrame.from_dict(total_errors)
-    # df.plot.bar(figsize=(12,6))
-    
-    # plt.ylim(ymin=0.0, ymax=0.018)
-
-    plt.savefig("../result_plot/simulation_changing_initial_tau_guess.svg", dpi=600)
-    plt.savefig("../result_plot/simulation_changing_initial_tau_guess.png", dpi=600)
-
-
-def run_with_hetero(common_configs):
-    tau = common_configs["params"]["tau"]
-    
+def run_with_hetero_noise(common_configs):
     initial_taus = np.linspace(0.2, 3.0, 100)
     dtau = initial_taus[1] - initial_taus[0]
     
@@ -569,8 +443,8 @@ def run_with_hetero(common_configs):
     for i in range(len(initial_taus) - 1):
         config = {
             "time_sampling_method": "certain_range_only",
-            "range_start": initial_taus[i] * tau,
-            "range_end": initial_taus[i+1] * tau,
+            "range_start": initial_taus[i],
+            "range_end": initial_taus[i+1],
             "force_noiseless": True
         }
         result = run_curve_fit(**common_configs, **config, 
@@ -584,8 +458,8 @@ def run_with_hetero(common_configs):
     for i in range(len(initial_taus) - 1):
         config = {
             "time_sampling_method": "certain_range_only",
-            "range_start": initial_taus[i] * tau,
-            "range_end": initial_taus[i+1] * tau,
+            "range_start": initial_taus[i],
+            "range_end": initial_taus[i+1],
             'hetero': True,
             'hetero_f': lambda x:np.sqrt(x),
             "force_noiseless": True
@@ -595,17 +469,15 @@ def run_with_hetero(common_configs):
             curve_fit_method="one")
         errors_range_only_hetero.append(result["error"])
     
-    # plt.plot(initial_taus[0:-1], errors_range_only, color = 'C1', label = "homo")
-    plt.plot(initial_taus[0:-1], errors_range_only_hetero, color = 'C1', label = "hetero")
-
+    plt.plot(initial_taus[0:-1], errors_range_only_hetero, color = 'C1', label = "hetero1")
 
     # hetero
     errors_range_only_hetero = []
     for i in range(len(initial_taus) - 1):
         config = {
             "time_sampling_method": "certain_range_only",
-            "range_start": initial_taus[i] * tau,
-            "range_end": initial_taus[i+1] * tau,
+            "range_start": initial_taus[i],
+            "range_end": initial_taus[i+1],
             'hetero': True,
             'hetero_f': lambda x:x,
             "force_noiseless": True
@@ -624,8 +496,8 @@ def run_with_hetero(common_configs):
     for i in range(len(initial_taus) - 1):
         config = {
             "time_sampling_method": "certain_range_only",
-            "range_start": initial_taus[i] * tau,
-            "range_end": initial_taus[i+1] * tau,
+            "range_start": initial_taus[i],
+            "range_end": initial_taus[i+1],
             'hetero': True,
             'hetero_f': lambda x:1.0/x,
             "force_noiseless": True
@@ -637,70 +509,29 @@ def run_with_hetero(common_configs):
     
     # plt.plot(initial_taus[0:-1], errors_range_only, color = 'C1', label = "homo")
     plt.plot(initial_taus[0:-1], errors_range_only_hetero, color = 'C3', label = "hetero3")
-
-
-    # # hetero
-    # errors_range_only_hetero = []
-    # for i in range(len(initial_taus) - 1):
-    #     config = {
-    #         "time_sampling_method": "certain_range_only",
-    #         "range_start": initial_taus[i] * tau,
-    #         "range_end": initial_taus[i+1] * tau,
-    #         'hetero': True,
-    #         'hetero_f': lambda x:x*x,
-    #         "force_noiseless": True
-    #     }
-    #     result = run_curve_fit(**common_configs, **config, 
-    #         initial_sample_ratio=0.3, background_sample_ratio=0.3, 
-    #         curve_fit_method="one")
-    #     errors_range_only_hetero.append(result["error"])
     
-    # # plt.plot(initial_taus[0:-1], errors_range_only, color = 'C1', label = "homo")
-    # plt.plot(initial_taus[0:-1], errors_range_only_hetero, color = 'C4', label = "hetero3")
+    plt.ylim(ymin=0.0, ymax=0.3)
 
-
-    # plt.legend()
-    # plt.show()
-    # exit(0)
-
-    # plt.legend()
-    # plt.axhline(y = errors_others["exponential"], color = 'b', linestyle = '-')
-    # plt.show()
-
-    # plt.show()
-    # df = pd.DataFrame.from_dict(total_errors)
-    # df.plot.bar(figsize=(12,6))
-    
-    plt.ylim(ymin=0.0, ymax=0.02)
-
-    plt.savefig("../result_plot/hetero.svg", dpi=600)
-    plt.savefig("../result_plot/hetero.png", dpi=600)
+    plt.savefig("../result/hetero.svg", dpi=600)
+    plt.savefig("../result/hetero.png", dpi=600)
 
 if __name__ == "__main__":
-
-    A = 1.321
-    tau = 1.4332
-    B = 0.265
-
     common_configs = {
         "N": 100,
         "M": 1,
         "n_iter": 1000,
-        "start_time": tau * 0.0,
-        "end_time": tau * 3.0,
-        "params": {"A":A, "B":B, "tau": tau},
-        "noise_stdev": 0.1
+        "start_time": 0.0,
+        "end_time": 6.0,
+        "noise_stdev": 0.165
     }
-    run_comparison_linear(common_configs)
 
-    # run_comparison_all(common_configs)
+    expnumber = sys.argv[1]
+    if expnumber == '0' or expnumber == "fig3":
+        run_comparison_all(common_configs)
+    elif expnumber == '1' or expnumber == "fig4":
+        run_with_different_tau(common_configs)
+    elif expnumber == '2' or expnumber == "fig5":
+        run_with_hetero_noise(common_configs)
+    elif expnumber == '3' or expnumber == "fig6":
+        run_with_linear(common_configs)
     
-    # run_comparison_linear(common_configs)
-    # run_with_different_tau(common_configs)
-    # run_with_different_tau2(common_configs)
-
-    # run_comparison_linear_with_duplicate(common_configs)
-
-
-    # run_comparison_all(common_configs)
-
