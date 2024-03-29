@@ -526,12 +526,12 @@ if __name__ == "__main__":
     }
 
     expnumber = sys.argv[1]
-    if expnumber == '0' or expnumber == "fig3":
+    if expnumber == '3' or expnumber == "fig3":
         run_comparison_all(common_configs)
-    elif expnumber == '1' or expnumber == "fig4":
+    elif expnumber == '4' or expnumber == "fig4":
         run_with_different_tau(common_configs)
-    elif expnumber == '2' or expnumber == "fig5":
+    elif expnumber == '5' or expnumber == "fig5":
         run_with_hetero_noise(common_configs)
-    elif expnumber == '3' or expnumber == "fig6":
+    elif expnumber == '6' or expnumber == "fig6":
         run_with_linear(common_configs)
     
