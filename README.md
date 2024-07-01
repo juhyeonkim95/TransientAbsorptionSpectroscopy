@@ -1,6 +1,6 @@
 # Efficient TAS
 
-This is an anonymous repository for paper titled "Efficient Time Sampling Strategy for Transient Absorption Spectroscopy" submitted to ICCP 2024 (submission ID 38)
+This repository is the official Mitsuba3 implementation of "Efficient Time Sampling Strategy for Transient Absorption Spectroscopy" by Juhyeon Kim, Joshua Multhaup, Mahima Sneha, Adithya Pediredla (ICCP 2024).
 
 
 ## Run simulation
@@ -21,4 +21,10 @@ You can find output in `result` folder.
 We already included the plots, so please check them.
 
  ## Real-data
- We will release real-data after the acceptance.
+TBA
+
+## Citation
+If you find this useful for your research, please consider to cite:
+```
+TBA
+```
