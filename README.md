@@ -1,4 +1,4 @@
-# Efficient TAS
+# Efficient Time Sampling Strategy for TAS
 
 This repository is the official Mitsuba3 implementation of "Efficient Time Sampling Strategy for Transient Absorption Spectroscopy" by Juhyeon Kim, Joshua Multhaup, Mahima Sneha, Adithya Pediredla (ICCP 2024).
 
