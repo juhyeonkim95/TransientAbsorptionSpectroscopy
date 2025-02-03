@@ -21,7 +21,12 @@ You can find output in `result` folder.
 We already included the plots, so please check them.
 
  ## Real-data
-TBA
+You can find real data in `data` folder, measured for 4CzIPN.
+Each folder includes exponential sampling and our proposed sampling (neartautime) method, repeated over 10 times.
+Also we have code for real data:
+```
+python main_real_data.py
+```
 
 ## Citation
 If you find this useful for your research, please consider to cite:
