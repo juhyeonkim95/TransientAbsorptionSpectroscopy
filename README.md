@@ -26,5 +26,12 @@ TBA
 ## Citation
 If you find this useful for your research, please consider to cite:
 ```
-TBA
+@inproceedings{kim2024efficient,
+  title={Efficient Time Sampling Strategy for Transient Absorption Spectroscopy},
+  author={Kim, Juhyeon and Multhaup, Joshua and Sneha, Mahima and Pediredla, Adithya},
+  booktitle={2024 IEEE International Conference on Computational Photography (ICCP)},
+  pages={1--12},
+  year={2024},
+  organization={IEEE}
+}
 ```
